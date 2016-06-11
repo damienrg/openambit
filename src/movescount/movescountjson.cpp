@@ -21,11 +21,11 @@
  */
 #include "movescountjson.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegExp>
 #include <QVariantMap>
 #include <QVariantList>
-#include <qjson/parser.h>
-#include <qjson/serializer.h>
 #include <zlib.h>
 #include <math.h>
 
@@ -36,23 +36,25 @@ MovesCountJSON::MovesCountJSON(QObject *parent) :
 
 int MovesCountJSON::parseFirmwareVersionReply(QByteArray &input, u_int8_t fw_version[3])
 {
-    QJson::Parser parser;
-    bool ok;
     QRegExp rx("([0-9]+)\\.([0-9]+)\\.([0-9]+)");
 
     if (input.length() <= 0) {
         return -1;
     }
 
-    QVariantMap result = parser.parse(input, &ok).toMap();
-
-    if (ok && result["LatestFirmwareVersion"].toString().length() > 0) {
-        if (rx.indexIn(result["LatestFirmwareVersion"].toString()) >= 0) {
+    QJsonParseError parseError;
+    QJsonDocument document = QJsonDocument::fromJson(input, &parseError);
+    if (parseError.error == QJsonParseError::NoError)
+    {
+      QJsonObject json = document.object();
+      if (json["LatestFirmwareVersion"].toString().length() > 0) {
+        if (rx.indexIn(json["LatestFirmwareVersion"].toString()) >= 0) {
             fw_version[0] = rx.cap(1).toInt();
             fw_version[1] = rx.cap(2).toInt();
             fw_version[2] = rx.cap(3).toInt();
             return 0;
         }
+      }
     }
 
     return -1;
@@ -60,18 +62,19 @@ int MovesCountJSON::parseFirmwareVersionReply(QByteArray &input, u_int8_t fw_ver
 
 int MovesCountJSON::parseLogReply(QByteArray &input, QString &moveId)
 {
-    QJson::Parser parser;
-    bool ok;
-
     if (input.length() <= 0) {
         return -1;
     }
 
-    QVariantMap result = parser.parse(input, &ok).toMap();
-
-    if (ok && result["MoveID"].toString().length() > 0 && result["MoveID"].toString() != "0") {
-        moveId = result["MoveID"].toString();
+    QJsonParseError parseError;
+    QJsonDocument document = QJsonDocument::fromJson(input, &parseError);
+    if (parseError.error == QJsonParseError::NoError)
+    {
+      QJsonObject json = document.object();
+      if (json["MoveID"].toString().length() > 0 && json["MoveID"].toString() != "0") {
+        moveId = json["MoveID"].toString();
         return 0;
+      }
     }
 
     return -1;
@@ -79,23 +82,19 @@ int MovesCountJSON::parseLogReply(QByteArray &input, QString &moveId)
 
 int MovesCountJSON::parseLogDirReply(QByteArray &input, QList<MovesCountLogDirEntry> &entries)
 {
-    QJson::Parser parser;
-    QVariantList logList;
-
-    bool ok;
-
     if (input.length() <= 0) {
         return -1;
     }
 
-    logList = parser.parse(input, &ok).toList();
-
-    if (ok) {
-        foreach(QVariant entryVar, logList) {
-            QVariantMap entry = entryVar.toMap();
-            entries.append(MovesCountLogDirEntry(entry["MoveID"].toString(), QDateTime::fromString(entry["LocalStartTime"].toString(), "yyyy-MM-ddThh:mm:ss.zzz"), entry["ActivityID"].toUInt()));
+    QJsonParseError parseError;
+    QJsonDocument document = QJsonDocument::fromJson(input, &parseError);
+    if (parseError.error == QJsonParseError::NoError)
+    {
+        QJsonObject json = document.object();
+        foreach(QJsonValue entryVar, json) {
+            QJsonObject entry = entryVar.toObject();
+            entries.append(MovesCountLogDirEntry(entry["MoveID"].toString(), QDateTime::fromString(entry["LocalStartTime"].toString(), "yyyy-MM-ddThh:mm:ss.zzz"), entry["ActivityID"].toInt()));
         }
-
         return 0;
     }
 
@@ -118,8 +117,7 @@ int MovesCountJSON::parseLogDirReply(QByteArray &input, QList<MovesCountLogDirEn
  */
 int MovesCountJSON::generateLogData(LogEntry *logEntry, QByteArray &output)
 {
-    QJson::Serializer serializer;
-    bool ok, inPause = false;
+    bool inPause = false;
     QVariantMap content;
     QVariantList IBIContent;
     QVariantList marksContent;
@@ -374,9 +372,6 @@ int MovesCountJSON::generateLogData(LogEntry *logEntry, QByteArray &output)
         }
     }
 
-    serializer.setDoublePrecision(16);
-    serializer.setIndentMode(QJson::IndentCompact);
-
     content.insert("ActivityID", logEntry->logEntry->header.activity_type);
     content.insert("AscentAltitude", (double)logEntry->logEntry->header.ascent);
     content.insert("AscentTime", (double)logEntry->logEntry->header.ascent_time/1000.0);
@@ -398,7 +393,7 @@ int MovesCountJSON::generateLogData(LogEntry *logEntry, QByteArray &output)
         content.insert("HighAltitude", QVariant::Invalid);
     }
     if (IBIContent.count() > 0) {
-        uncompressedData = serializer.serialize(IBIContent);
+        uncompressedData = QJsonDocument::fromVariant(IBIContent).toJson(QJsonDocument::Compact);
         compressData(uncompressedData, compressedData);
         QVariantMap IBIDataMap;
         IBIDataMap.insert("CompressedValues", compressedData.toBase64());
@@ -421,7 +416,7 @@ int MovesCountJSON::generateLogData(LogEntry *logEntry, QByteArray &output)
     content.insert("PeakTrainingEffect", (double)logEntry->logEntry->header.peak_training_effect/10.0);
     content.insert("RecoveryTime", (double)logEntry->logEntry->header.recovery_time/1000.0);
     if (periodicSamplesContent.count() > 0) {
-        uncompressedData = serializer.serialize(periodicSamplesContent);
+        uncompressedData = QJsonDocument::fromVariant(periodicSamplesContent).toJson(QJsonDocument::Compact);
         compressData(uncompressedData, compressedData);
         QVariantMap periodicSamplesDataMap;
         periodicSamplesDataMap.insert("CompressedSampleSets", compressedData.toBase64());
@@ -431,16 +426,17 @@ int MovesCountJSON::generateLogData(LogEntry *logEntry, QByteArray &output)
     content.insert("StartLatitude", QVariant::Invalid);
     content.insert("StartLongitude", QVariant::Invalid);
     if (GPSSamplesContent.count() > 0) {
-        uncompressedData = serializer.serialize(GPSSamplesContent);
+        uncompressedData = QJsonDocument::fromVariant(GPSSamplesContent).toJson(QJsonDocument::Compact);
         compressData(uncompressedData, compressedData);
         QVariantMap GPSSamplesDataMap;
         GPSSamplesDataMap.insert("CompressedTrackPoints", compressedData.toBase64());
         content.insert("Track", GPSSamplesDataMap);                   /* compressed */
     }
 
-    output = serializer.serialize(content, &ok);
+    QJsonDocument document = QJsonDocument::fromVariant(content);
+    output = document.toJson(QJsonDocument::Compact);
 
-    return (ok ? 0 : -1);
+    return !document.isNull();
 }
 
 bool MovesCountJSON::writePeriodicSample(ambit_log_sample_t *sample, QVariantMap &output)

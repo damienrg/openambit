@@ -6,21 +6,24 @@ set (OPENAMBIT_VERSION HEAD)
 # Where to lookup modules
 set(CMAKE_MODULE_PATH "${OPENAMBIT_SOURCE_DIR}/cmake")
 
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 
-find_package(Qt4 REQUIRED)
+find_package(Qt5Core REQUIRED)
+find_package(Qt5Widgets REQUIRED)
+find_package(Qt5Network REQUIRED)
+find_package(Qt5LinguistTools REQUIRED)
 find_package(libambit REQUIRED)
 find_package(Movescount REQUIRED)
 find_package(UDev REQUIRED)
 
-include(${QT_USE_FILE})
 include(GNUInstallDirs)
 
 include_directories (
   ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}
-  ${QT_QTCORE_INCLUDE_DIR}
-  ${QT_QTGUI_INCLUDE_DIR}
-  ${QT_QTNETWORK_INCLUDE_DIR}
+  ${Qt5Core_INCLUDE_DIRS}
+  ${Qt5Widgets_INCLUDE_DIRS}
+  ${Qt5Network_INCLUDE_DIRS}
   ${LIBAMBIT_INCLUDE_DIR}
   ..
 )
@@ -74,9 +77,9 @@ file (GLOB TRANSLATIONS_FILES translations/*.ts)
 
 option (UPDATE_TRANSLATIONS "Update source translation translations/*.ts")
 if (UPDATE_TRANSLATIONS)
-  qt4_create_translation(QM_FILES ${FILES_TO_TRANSLATE} ${TRANSLATIONS_FILES})
+  qt5_create_translation(QM_FILES ${FILES_TO_TRANSLATE} ${TRANSLATIONS_FILES})
 else (UPDATE_TRANSLATIONS)
-  qt4_add_translation(QM_FILES ${TRANSLATIONS_FILES})
+  qt5_add_translation(QM_FILES ${TRANSLATIONS_FILES})
 endif (UPDATE_TRANSLATIONS)
 
 # Create translations QRC file - ts.qrc
@@ -94,15 +97,15 @@ set_directory_properties(PROPERTIES CLEAN_NO_CUSTOM true)
 
 ######### Translations
 
-QT4_WRAP_UI(UIS ${openambit_UIS})
-QT4_ADD_RESOURCES(RSCS ${openambit_RSCS})
-QT4_WRAP_CPP(MOCS ${openambit_MOCS})
+qt5_wrap_ui(UIS ${openambit_UIS})
+qt5_add_resources(RSCS ${openambit_RSCS})
+qt5_wrap_cpp(MOCS ${openambit_MOCS})
 
 add_definitions( -DAPP_VERSION="${OPENAMBIT_VERSION}" )
 
 add_executable ( openambit ${openambit_SRCS} ${UIS} ${RSCS} ${MOCS} )
 
-target_link_libraries ( openambit  ${QT_QTCORE_LIBRARY} ${QT_QTGUI_LIBRARY} ${QT_QTNETWORK_LIBRARY} ${LIBAMBIT_LIBS} ${MOVESCOUNT_LIBS} ${UDEV_LIBS} )
+target_link_libraries ( openambit Qt5::Core Qt5::Widgets Qt5::Network ${LIBAMBIT_LIBS} ${MOVESCOUNT_LIBS} ${UDEV_LIBS} )
 
 install ( TARGETS openambit DESTINATION ${CMAKE_INSTALL_BINDIR} )
 install ( FILES ${OPENAMBIT_SOURCE_DIR}/deployment/openambit.desktop
